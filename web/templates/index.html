@@ -10,6 +10,7 @@
     <style>
         .gradient-text {
             background: linear-gradient(to right, #4f46e5, #ec4899);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -19,6 +20,12 @@
 <body class="bg-gray-900 text-white font-sans min-h-screen flex flex-col items-center p-8">
 
     <header class="mb-12 text-center">
+        <!-- Connection Status Banner -->
+        <div id="connection-banner"
+            class="hidden fixed top-0 left-0 w-full bg-red-600 text-white text-center py-2 font-bold z-50 shadow-lg animate-pulse">
+            ⚠️ Connection Lost. Trying to reconnect...
+        </div>
+
         <h1 class="text-4xl font-extrabold mb-2 gradient-text">Whisper Real-time Translator</h1>
         <p class="text-gray-400">Speak in one language, listen in any.</p>
     </header>
@@ -129,16 +136,35 @@
         const stopBtn = document.getElementById("stop-btn");
         const langSelect = document.getElementById("language-select");
 
+        const banner = document.getElementById("connection-banner");
+
         socket.onopen = () => {
             console.log("Connected to WebSocket");
+            banner.classList.add("hidden");
+            statusIndicator.textContent = "Status: Connected";
+            statusIndicator.classList.remove("text-red-500");
+
             // Send initial config
             sendConfig();
         };
 
         socket.onclose = () => {
             console.log("Disconnected");
-            statusIndicator.textContent = "Status: Disconnected (Refresh)";
+            banner.textContent = "⚠️ Disconnected from Server. Please refresh.";
+            banner.classList.remove("hidden");
+
+            statusIndicator.textContent = "Status: Disconnected";
+            statusIndicator.classList.remove("text-green-400");
             statusIndicator.classList.add("text-red-500");
+
+            // Optional: Auto-reload after 5s?
+            // setTimeout(() => location.reload(), 5000);
+        };
+
+        socket.onerror = (err) => {
+            console.error("WebSocket Error", err);
+            banner.textContent = "⚠️ Connection Error occurred.";
+            banner.classList.remove("hidden");
         };
 
         socket.onmessage = (event) => {

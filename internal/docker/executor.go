@@ -66,6 +66,5 @@ func (w *WhisperExecutor) Process(audioFilePath string) (string, error) {
 		}
 		content = content2
 	}
-
 	return string(content), nil
 }
