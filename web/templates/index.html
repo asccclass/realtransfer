@@ -242,20 +242,77 @@
         startBtn.addEventListener("click", async () => {
             try {
                 audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                // --- VAD Setup ---
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await audioContext.resume();
+                const source = audioContext.createMediaStreamSource(audioStream);
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                let maxVolInChunk = 0;
+
+                // Monitoring Loop
+                function checkVolume() {
+                    if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+                    analyser.getByteFrequencyData(dataArray);
+
+                    // Simple average volume
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    let average = sum / dataArray.length;
+                    // Scale to 0-1 essentially (255 max)
+                    // Let's us basic thresholding on this average value (0-255)
+                    // Silence is usually < 10 in digital silence, or < 30 in noisy room.
+
+                    if (average > maxVolInChunk) {
+                        maxVolInChunk = average;
+                    }
+
+                    // Visualize (Optional but good for debug)
+                    // console.log("Vol:", average);
+
+                    requestAnimationFrame(checkVolume);
+                }
+                // ----------------
+
                 mediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' }); // Chrome uses webm
 
                 mediaRecorder.ondataavailable = (e) => {
+                    // Threshold: 20 out of 255 (~8%) seems reasonable for "talking" vs "background hum"
+                    // Adjust based on testing. keeping it conservative effectively filters 'silence'.
+                    const NOISE_THRESHOLD = 20;
+
                     if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-                        socket.send(e.data);
+                        if (maxVolInChunk > NOISE_THRESHOLD) {
+                            socket.send(e.data);
+                            statusIndicator.querySelector('span').textContent = "Broadcasting (Voice Detected)";
+                            statusIndicator.classList.remove("text-yellow-500");
+                            statusIndicator.classList.add("text-green-400");
+                        } else {
+                            console.log("Skipping silent chunk. Level:", maxVolInChunk);
+                            statusIndicator.querySelector('span').textContent = "Broadcasting (Silence)";
+                            statusIndicator.classList.remove("text-green-400");
+                            statusIndicator.classList.add("text-yellow-500");
+                        }
                     }
+                    // Reset for next chunk
+                    maxVolInChunk = 0;
                 };
 
                 // Collect chunks every 1s
                 mediaRecorder.start(1000);
+                checkVolume(); // Start monitoring
 
-                statusIndicator.textContent = "Status: Broadcasting...";
+                // Initialize status text structure if needed or just replace text
+                // Let's make sure statusIndicator has a span to update effectively or just update textContent
+                statusIndicator.innerHTML = '<span class="animate-pulse">Broadcasting...</span>';
                 statusIndicator.classList.remove("text-gray-500");
-                statusIndicator.classList.add("text-green-400", "animate-pulse");
+                statusIndicator.classList.add("text-green-400");
 
                 startBtn.classList.add("hidden");
                 stopBtn.classList.remove("hidden");

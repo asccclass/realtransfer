@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"realtransfer/internal/audio"
@@ -32,8 +33,22 @@ func main() {
 			return
 		}
 
-		if text == "" {
-			log.Println("Whisper output empty, skipping broadcast.")
+		// Clean and Filter
+		text = strings.TrimSpace(text)
+
+		// Common Whisper Hallucinations (especially with noise/music)
+		ignored := []string{"[Silence]", "[Music]", "(Video Ad)", "[Applause]", "..."}
+
+		for _, ignore := range ignored {
+			if strings.Contains(text, ignore) {
+				log.Printf("Ignored text (hallucination): %s", text)
+				return
+			}
+		}
+
+		// Check if empty or just punctuation
+		if text == "" || text == "." || text == "?" || text == "!" {
+			log.Println("Whisper output empty or insignificant, skipping broadcast.")
 			return
 		}
 
