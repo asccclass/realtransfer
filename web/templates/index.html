@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Translation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        .gradient-text {
+            background: linear-gradient(to right, #4f46e5, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-white font-sans min-h-screen flex flex-col items-center p-8">
+
+    <header class="mb-12 text-center">
+        <h1 class="text-4xl font-extrabold mb-2 gradient-text">Whisper Real-time Translator</h1>
+        <p class="text-gray-400">Speak in one language, listen in any.</p>
+    </header>
+
+    <main class="w-full max-w-4xl">
+
+        <!-- Role Selection -->
+        <div id="role-selection" class="flex flex-col items-center gap-6 animate-fade-in-up">
+            <h2 class="text-2xl text-gray-300">Choose your role</h2>
+            <div class="flex gap-8">
+                <button id="btn-choose-speaker"
+                    class="group relative flex flex-col items-center p-8 bg-gray-800 rounded-2xl border border-gray-700 hover:border-indigo-500 hover:shadow-2xl hover:bg-gray-750 transition-all duration-300 w-48 transition-transform transform hover:scale-105">
+                    <span class="text-5xl mb-4 group-hover:scale-110 transition-transform">🎤</span>
+                    <span class="text-xl font-bold text-indigo-400">Speaker</span>
+                </button>
+                <button id="btn-choose-listener"
+                    class="group relative flex flex-col items-center p-8 bg-gray-800 rounded-2xl border border-gray-700 hover:border-pink-500 hover:shadow-2xl hover:bg-gray-750 transition-all duration-300 w-48 transition-transform transform hover:scale-105">
+                    <span class="text-5xl mb-4 group-hover:scale-110 transition-transform">🎧</span>
+                    <span class="text-xl font-bold text-pink-400">Listener</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Speaker Section -->
+        <section id="section-speaker"
+            class="hidden bg-gray-800 p-6 rounded-2xl shadow-xl border border-gray-700 animate-fade-in">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-indigo-400 flex items-center">
+                    <span>🎤 Speaker Mode</span>
+                </h2>
+                <button onclick="location.reload()" class="text-sm text-gray-500 hover:text-white underline">Change
+                    Role</button>
+            </div>
+            <p class="text-gray-400 text-sm mb-6">Broadcast your voice to listeners.</p>
+
+            <div id="speaker-controls" class="flex flex-col gap-4">
+                <button id="start-btn"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 shadow-lg flex justify-center items-center gap-2">
+                    Start Broadcasting
+                </button>
+                <button id="stop-btn"
+                    class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-all hidden">
+                    Stop Broadcasting
+                </button>
+                <div id="status-indicator" class="text-center text-sm font-mono text-gray-500 mt-2">
+                    Status: Idle
+                </div>
+            </div>
+
+            <!-- Stats Module -->
+            <div id="stats-container" class="mt-8 p-4 bg-gray-900 rounded-xl border border-gray-600 hidden">
+                <h3 class="text-lg font-bold text-gray-300 mb-2">Listener Statistics</h3>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-gray-400">Total Clients:</span>
+                    <span id="stat-total" class="text-xl font-bold text-indigo-400">0</span>
+                </div>
+                <div id="stat-langs" class="text-sm text-gray-400 space-y-1">
+                    <!-- Language Rows injected here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Listener Section -->
+        <section id="section-listener"
+            class="hidden bg-gray-800 p-6 rounded-2xl shadow-xl border border-gray-700 animate-fade-in">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-pink-400 flex items-center">
+                    <span>🎧 Listener Mode</span>
+                </h2>
+                <button onclick="location.reload()" class="text-sm text-gray-500 hover:text-white underline">Change
+                    Role</button>
+            </div>
+            <p class="text-gray-400 text-sm mb-6">Select your language to follow along.</p>
+
+            <div class="mb-6">
+                <label class="block text-sm font-bold mb-2 text-gray-300">Target Language</label>
+                <select id="language-select"
+                    class="w-full bg-gray-900 border border-gray-600 text-white rounded-lg p-3 focus:outline-none focus:border-pink-500">
+                    <option value="en">English</option>
+                    <option value="zh">Chinese (Traditional)</option>
+                    <option value="ja">Japanese</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                </select>
+            </div>
+
+            <div id="transcript-container"
+                class="bg-gray-900 p-4 rounded-lg h-96 overflow-y-auto border border-gray-700 font-mono text-sm shadow-inner scroll-smooth">
+                <div class="text-gray-600 italic text-center mt-32" id="empty-state">Waiting for speech...</div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="mt-16 text-gray-600 text-sm">
+        Powered by Docker, Whisper, and Go
+    </footer>
+
+    <script>
+        // WebSocket Connection
+        let socket = new WebSocket("ws://" + window.location.host + "/ws");
+        let mediaRecorder;
+        let audioStream;
+
+        const statusIndicator = document.getElementById("status-indicator");
+        const startBtn = document.getElementById("start-btn");
+        const stopBtn = document.getElementById("stop-btn");
+        const langSelect = document.getElementById("language-select");
+
+        socket.onopen = () => {
+            console.log("Connected to WebSocket");
+            // Send initial config
+            sendConfig();
+        };
+
+        socket.onclose = () => {
+            console.log("Disconnected");
+            statusIndicator.textContent = "Status: Disconnected (Refresh)";
+            statusIndicator.classList.add("text-red-500");
+        };
+
+        socket.onmessage = (event) => {
+            const msg = event.data;
+
+            // Check if JSON (Stats) or HTML (Swap)
+            // A primitive check: if starts with '{', assume JSON
+            if (msg.trim().startsWith('{')) {
+                try {
+                    const data = JSON.parse(msg);
+                    if (data.type === "stats") {
+                        updateStats(data);
+                    }
+                } catch (e) {
+                    console.error("Failed to parse JSON msg", e);
+                }
+                return;
+            }
+
+            // Handle OOB Swap manually
+            // Server sends: <div hx-swap-oob="beforeend:#transcript-container">...</div>
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(msg, 'text/html');
+            const oobElements = doc.querySelectorAll('[hx-swap-oob]');
+
+            oobElements.forEach(el => {
+                const swapAttr = el.getAttribute('hx-swap-oob');
+                // Format: "beforeend:#id"
+                const [method, targetSelector] = swapAttr.split(':');
+                const target = document.querySelector(targetSelector);
+
+                if (target) {
+                    // Remove empty state if present
+                    const emptyState = document.getElementById('empty-state');
+                    if (emptyState) emptyState.remove();
+
+                    if (method === 'beforeend') {
+                        // The element itself is the content to append in the server's response setup
+                        // but <div hx-swap-oob> wraps the content usually, or IS the content?
+                        // In my server code: <div hx-swap-oob...><div class...>Text</div></div>
+                        // So I append the CHILDREN of el.
+                        while (el.firstChild) {
+                            target.appendChild(el.firstChild);
+                        }
+                        // Scroll to bottom
+                        target.scrollTop = target.scrollHeight;
+                    }
+                }
+            });
+        };
+
+        function updateStats(data) {
+            const statsContainer = document.getElementById("stats-container");
+            const statTotal = document.getElementById("stat-total");
+            const statLangs = document.getElementById("stat-langs");
+
+            // Show container if speaker
+            if (!document.getElementById("section-speaker").classList.contains("hidden")) {
+                statsContainer.classList.remove("hidden");
+            }
+
+            statTotal.textContent = data.total;
+            statLangs.innerHTML = "";
+
+            for (const [lang, count] of Object.entries(data.languages)) {
+                if (lang === "connected") continue; // skip undefined
+                const row = document.createElement("div");
+                row.className = "flex justify-between";
+                row.innerHTML = `<span>${getLangName(lang)}</span> <span class="font-mono text-gray-300">x${count}</span>`;
+                statLangs.appendChild(row);
+            }
+        }
+
+        function getLangName(code) {
+            const map = {
+                'en': 'English',
+                'zh': 'Chinese',
+                'ja': 'Japanese',
+                'es': 'Spanish',
+                'fr': 'French',
+                'de': 'German'
+            };
+            return map[code] || code;
+        }
+
+        // Config Handling
+        function sendConfig() {
+            if (socket.readyState === WebSocket.OPEN) {
+                const payload = {
+                    type: "config",
+                    lang: langSelect.value
+                };
+                socket.send(JSON.stringify(payload));
+            }
+        }
+
+        langSelect.addEventListener("change", sendConfig);
+
+        // Speaker Logic
+        startBtn.addEventListener("click", async () => {
+            try {
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' }); // Chrome uses webm
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+                        socket.send(e.data);
+                    }
+                };
+
+                // Collect chunks every 1s
+                mediaRecorder.start(1000);
+
+                statusIndicator.textContent = "Status: Broadcasting...";
+                statusIndicator.classList.remove("text-gray-500");
+                statusIndicator.classList.add("text-green-400", "animate-pulse");
+
+                startBtn.classList.add("hidden");
+                stopBtn.classList.remove("hidden");
+
+            } catch (err) {
+                console.error("Error accessing microphone", err);
+                alert("Could not access microphone.");
+            }
+        });
+
+        stopBtn.addEventListener("click", () => {
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+            }
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+            }
+
+            statusIndicator.textContent = "Status: Idle";
+            statusIndicator.classList.remove("text-green-400", "animate-pulse");
+            statusIndicator.classList.add("text-gray-500");
+
+            stopBtn.classList.add("hidden");
+            startBtn.classList.remove("hidden");
+        });
+
+        // Role Logic
+        const roleSelection = document.getElementById("role-selection");
+        const sectionSpeaker = document.getElementById("section-speaker");
+        const sectionListener = document.getElementById("section-listener");
+        const btnChooseSpeaker = document.getElementById("btn-choose-speaker");
+        const btnChooseListener = document.getElementById("btn-choose-listener");
+
+        btnChooseSpeaker.addEventListener("click", () => {
+            roleSelection.classList.add("hidden");
+            sectionSpeaker.classList.remove("hidden");
+        });
+
+        btnChooseListener.addEventListener("click", () => {
+            roleSelection.classList.add("hidden");
+            sectionListener.classList.remove("hidden");
+        });
+    </script>
+</body>
+
+</html>

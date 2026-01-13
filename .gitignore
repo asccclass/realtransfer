@@ -1,0 +1,10 @@
+*.exe
+*old
+*.old
+*.swp
+*.bin
+*.log
+*.zip
+*.tar.gz
+*.tar
+*.pyc
