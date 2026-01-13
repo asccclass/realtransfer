@@ -86,8 +86,8 @@ func main() {
 		http.ServeFile(w, r, filepath.Join("web", "templates", "index.html"))
 	})
 
-	log.Println("Real-time Translation Server started on :8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	log.Println("Real-time Translation Server started on :8443")
+	if err := http.ListenAndServe(":8443", mux); err != nil {
 		log.Fatal(err)
 	}
 }
